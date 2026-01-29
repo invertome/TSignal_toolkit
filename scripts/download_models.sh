@@ -35,13 +35,25 @@ echo "Using: $DOWNLOADER"
 echo ""
 
 #################################################
+# Download URLs
+# Update these URLs after uploading to Zenodo/etc
+#################################################
+
+# Pre-trained model (~1.9 GB)
+# Original source: TSignal authors via Dropbox
+MODEL_URL="https://www.dropbox.com/s/lfuleg9470s7nqx/deployment_sep_pe_swa_extra_inpemb_on_gen_best_eval_only_dec.pth?dl=1"
+
+# Singularity container (~557 MB)
+# TODO: Update this URL after uploading to Zenodo
+CONTAINER_URL="PLACEHOLDER_URL"
+
+#################################################
 # Download Pre-trained Model
 #################################################
 
 MODEL_DIR="model"
 MODEL_NAME="deployment_sep_pe_swa_extra_inpemb_on_gen_best_eval_only_dec.pth"
 MODEL_PATH="${MODEL_DIR}/${MODEL_NAME}"
-MODEL_URL="https://www.dropbox.com/s/lfuleg9470s7nqx/${MODEL_NAME}?dl=1"
 
 mkdir -p "$MODEL_DIR"
 
@@ -50,14 +62,13 @@ if [[ -f "$MODEL_PATH" ]]; then
     echo "  Size: $(du -h "$MODEL_PATH" | cut -f1)"
 else
     echo "Downloading pre-trained model (~1.9 GB)..."
-    echo "  URL: $MODEL_URL"
-    echo "  Destination: $MODEL_PATH"
+    echo "  This may take several minutes..."
     echo ""
 
     if [[ "$DOWNLOADER" == "wget" ]]; then
-        wget -O "$MODEL_PATH" "$MODEL_URL"
+        wget --progress=bar:force -O "$MODEL_PATH" "$MODEL_URL"
     else
-        curl -L -o "$MODEL_PATH" "$MODEL_URL"
+        curl -L --progress-bar -o "$MODEL_PATH" "$MODEL_URL"
     fi
 
     if [[ -f "$MODEL_PATH" ]]; then
@@ -73,81 +84,47 @@ fi
 echo ""
 
 #################################################
-# Build Singularity Container
+# Download Singularity Container
 #################################################
 
 CONTAINER_DIR="container"
 CONTAINER_PATH="${CONTAINER_DIR}/tsignal.sif"
-DEF_PATH="${CONTAINER_DIR}/tsignal.def"
 
 mkdir -p "$CONTAINER_DIR"
 
 if [[ -f "$CONTAINER_PATH" ]]; then
     echo "Container already exists: $CONTAINER_PATH"
     echo "  Size: $(du -h "$CONTAINER_PATH" | cut -f1)"
-else
-    echo "Building Singularity container (~557 MB)..."
+elif [[ "$CONTAINER_URL" == "PLACEHOLDER_URL" ]]; then
+    echo "==========================================="
+    echo "Container download URL not yet configured"
+    echo "==========================================="
     echo ""
-    echo "NOTE: This requires either:"
-    echo "  1. sudo privileges (for local build), or"
-    echo "  2. A Sylabs account (for remote build)"
+    echo "The container file needs to be downloaded manually."
+    echo ""
+    echo "Please contact the repository maintainer or check"
+    echo "the GitHub releases page for the container file."
+    echo ""
+    echo "Once downloaded, place it at: $CONTAINER_PATH"
+    echo ""
+else
+    echo "Downloading Singularity container (~557 MB)..."
+    echo "  This may take a few minutes..."
     echo ""
 
-    # Check for singularity/apptainer
-    if command -v apptainer &> /dev/null; then
-        RUNTIME="apptainer"
-    elif command -v singularity &> /dev/null; then
-        RUNTIME="singularity"
+    if [[ "$DOWNLOADER" == "wget" ]]; then
+        wget --progress=bar:force -O "$CONTAINER_PATH" "$CONTAINER_URL"
     else
-        echo "WARNING: Neither apptainer nor singularity found."
-        echo ""
-        echo "To install on Ubuntu/Debian:"
-        echo "  sudo apt install apptainer"
-        echo ""
-        echo "Or on HPC systems:"
-        echo "  module load singularity"
-        echo ""
-        echo "After installing, re-run this script or build manually:"
-        echo "  sudo singularity build $CONTAINER_PATH $DEF_PATH"
-        echo ""
-        echo "Skipping container build for now..."
-        RUNTIME=""
+        curl -L --progress-bar -o "$CONTAINER_PATH" "$CONTAINER_URL"
     fi
 
-    if [[ -n "$RUNTIME" ]]; then
-        echo "Found: $RUNTIME"
+    if [[ -f "$CONTAINER_PATH" ]]; then
         echo ""
-
-        # Try to build
-        if [[ -f "$DEF_PATH" ]]; then
-            echo "Attempting to build container..."
-            echo "  Definition: $DEF_PATH"
-            echo "  Output: $CONTAINER_PATH"
-            echo ""
-
-            # Try remote build first (doesn't require sudo)
-            if $RUNTIME build --remote "$CONTAINER_PATH" "$DEF_PATH" 2>/dev/null; then
-                echo ""
-                echo "Container built successfully (remote)!"
-            elif sudo $RUNTIME build "$CONTAINER_PATH" "$DEF_PATH" 2>/dev/null; then
-                echo ""
-                echo "Container built successfully (local with sudo)!"
-            else
-                echo ""
-                echo "WARNING: Container build failed."
-                echo ""
-                echo "Please build manually using one of these methods:"
-                echo ""
-                echo "  Option 1 - Local build (requires sudo):"
-                echo "    sudo $RUNTIME build $CONTAINER_PATH $DEF_PATH"
-                echo ""
-                echo "  Option 2 - Remote build (requires Sylabs account):"
-                echo "    $RUNTIME build --remote $CONTAINER_PATH $DEF_PATH"
-                echo ""
-            fi
-        else
-            echo "ERROR: Definition file not found: $DEF_PATH"
-        fi
+        echo "Container downloaded successfully!"
+        echo "  Size: $(du -h "$CONTAINER_PATH" | cut -f1)"
+    else
+        echo "ERROR: Container download failed!"
+        exit 1
     fi
 fi
 
@@ -177,7 +154,6 @@ if [[ -f "$CONTAINER_PATH" ]]; then
     echo "✓ Container found: $CONTAINER_PATH ($SIZE)"
 else
     echo "✗ Container NOT found: $CONTAINER_PATH"
-    echo "  -> Build with: sudo singularity build $CONTAINER_PATH $DEF_PATH"
     ERRORS=$((ERRORS + 1))
 fi
 
