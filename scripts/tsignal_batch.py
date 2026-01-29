@@ -8,9 +8,14 @@ Usage:
     ./tsignal_batch.py -i sequences.fasta -o output/
     ./tsignal_batch.py -i sequences.fasta -o output/ --threshold 0.8
     ./tsignal_batch.py --check  # Verify installation
+    ./tsignal_batch.py --version
 
 Author: Jorge L. Perez-Moreno, Ph.D. (jperezmoreno@umass.edu)
+Based on TSignal by Dumitrescu et al. (2022)
+https://github.com/Dumitrescu-Alexandru/TSignal
 """
+
+__version__ = "1.0.0"
 
 import argparse
 import csv
@@ -140,12 +145,87 @@ def write_fasta(sequences, output_path, line_width=60):
                 f.write(seq[i:i+line_width] + '\n')
 
 
+def validate_fasta(fasta_path):
+    """
+    Validate FASTA file format and content.
+    Returns (is_valid, message, stats).
+    """
+    valid_aa = set('ACDEFGHIKLMNPQRSTVWXY*-')
+    stats = {'sequences': 0, 'total_length': 0, 'min_length': float('inf'), 'max_length': 0}
+    errors = []
+
+    try:
+        with open(fasta_path, 'r') as f:
+            current_header = None
+            current_seq = []
+            line_num = 0
+
+            for line in f:
+                line_num += 1
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                if line.startswith('>'):
+                    # Process previous sequence
+                    if current_header and current_seq:
+                        seq = ''.join(current_seq).upper()
+                        stats['sequences'] += 1
+                        stats['total_length'] += len(seq)
+                        stats['min_length'] = min(stats['min_length'], len(seq))
+                        stats['max_length'] = max(stats['max_length'], len(seq))
+
+                        # Check for invalid characters
+                        invalid = set(seq) - valid_aa
+                        if invalid:
+                            errors.append(f"Invalid characters in '{current_header[:30]}...': {invalid}")
+
+                    current_header = line[1:]
+                    current_seq = []
+
+                    if not current_header:
+                        errors.append(f"Line {line_num}: Empty header")
+                else:
+                    if current_header is None:
+                        errors.append(f"Line {line_num}: Sequence data before header")
+                    else:
+                        current_seq.append(line)
+
+            # Process last sequence
+            if current_header and current_seq:
+                seq = ''.join(current_seq).upper()
+                stats['sequences'] += 1
+                stats['total_length'] += len(seq)
+                stats['min_length'] = min(stats['min_length'], len(seq))
+                stats['max_length'] = max(stats['max_length'], len(seq))
+
+                invalid = set(seq) - valid_aa
+                if invalid:
+                    errors.append(f"Invalid characters in '{current_header[:30]}...': {invalid}")
+
+        if stats['sequences'] == 0:
+            return False, "No sequences found in file", stats
+
+        if stats['min_length'] == float('inf'):
+            stats['min_length'] = 0
+
+        if errors:
+            return False, f"Validation errors: {'; '.join(errors[:3])}", stats
+
+        return True, "Valid FASTA file", stats
+
+    except Exception as e:
+        return False, f"Error reading file: {str(e)}", stats
+
+
 # ============================================================================
 # TSignal Prediction
 # ============================================================================
 
-def run_tsignal(input_fasta, output_csv, verbose=False):
+def run_tsignal(input_fasta, output_csv, verbose=False, threads=None):
     """Run TSignal prediction using Singularity container."""
+    import shutil
 
     # Determine container runtime
     runtime = None
@@ -169,41 +249,53 @@ def run_tsignal(input_fasta, output_csv, verbose=False):
     sp_data_dir = SOURCE_DIR / "sp_data"
     sp_data_dir.mkdir(exist_ok=True)
 
-    # Copy model if not already there
-    model_dest = sp_data_dir / MODEL_NAME
-    if not model_dest.exists():
-        log(f"Linking model to sp_data/")
-        os.symlink(MODEL_PATH, model_dest)
-
-    # Copy input fasta
-    import shutil
+    # Copy input fasta to sp_data (TSignal expects inputs there)
     input_dest = sp_data_dir / input_name
     shutil.copy(input_fasta, input_dest)
 
+    # Set up environment for thread control
+    env = os.environ.copy()
+    if threads:
+        env['OMP_NUM_THREADS'] = str(threads)
+        env['MKL_NUM_THREADS'] = str(threads)
+        env['OPENBLAS_NUM_THREADS'] = str(threads)
+        env['VECLIB_MAXIMUM_THREADS'] = str(threads)
+        env['NUMEXPR_NUM_THREADS'] = str(threads)
+        # For PyTorch
+        env['SINGULARITYENV_OMP_NUM_THREADS'] = str(threads)
+        env['APPTAINERENV_OMP_NUM_THREADS'] = str(threads)
+        log(f"Using {threads} CPU threads")
+
     # Build command
+    # Note: TSignal internally prepends get_data_folder() (sp_data/) to paths,
+    # so we only provide the filename, not the directory prefix
+    # We bind both source/ and the model file (model is expected in sp_data/ inside container)
     cmd = [
         runtime, "run",
         "--bind", f"{SOURCE_DIR}:/app/TSignal",
+        "--bind", f"{MODEL_PATH}:/app/TSignal/sp_data/{MODEL_NAME}",
         str(CONTAINER_PATH),
-        "--test_seqs", f"sp_data/{input_name}",
+        "--test_seqs", input_name,
         "--test_mdl", MODEL_NAME,
         "--tune_bert",
         "--train_only_decoder",
-        "--output_file", f"sp_data/{output_name}"
+        "--output_file", output_name
     ]
 
     if verbose:
         cmd.append("--verbouse")
 
     log(f"Running TSignal on {input_name}...")
-    log(f"Command: {' '.join(cmd)}")
+    if verbose:
+        log(f"Command: {' '.join(cmd)}")
 
     # Run TSignal
     result = subprocess.run(
         cmd,
         capture_output=True,
         text=True,
-        cwd=str(SOURCE_DIR)
+        cwd=str(SOURCE_DIR),
+        env=env
     )
 
     if result.returncode != 0:
@@ -211,7 +303,8 @@ def run_tsignal(input_fasta, output_csv, verbose=False):
         raise RuntimeError(f"TSignal failed with return code {result.returncode}")
 
     # Move output to desired location
-    output_src = sp_data_dir / output_name
+    # TSignal creates output in the working directory (SOURCE_DIR), not sp_data
+    output_src = SOURCE_DIR / output_name
     if output_src.exists():
         shutil.move(str(output_src), output_csv)
         log(f"Predictions saved to: {output_csv}")
@@ -219,7 +312,7 @@ def run_tsignal(input_fasta, output_csv, verbose=False):
         raise RuntimeError(f"TSignal did not produce output file: {output_src}")
 
     # Cleanup temporary input
-    input_dest.unlink()
+    input_dest.unlink(missing_ok=True)
 
     return output_csv
 
@@ -266,7 +359,7 @@ def find_cleavage_site(pred_labels):
     return cs_pos
 
 
-def process_sequences(sequences, predictions, threshold=0.9):
+def process_sequences(sequences, predictions, threshold=0.9, show_progress=True):
     """
     Process sequences using predictions.
 
@@ -278,8 +371,14 @@ def process_sequences(sequences, predictions, threshold=0.9):
     annotations = []
     processed = {}
     signal_peptides = {}
+    total = len(sequences)
+    progress_interval = max(1, total // 20)  # Show ~20 progress updates
 
-    for header, full_seq in sequences.items():
+    for idx, (header, full_seq) in enumerate(sequences.items()):
+        # Progress indicator
+        if show_progress and idx > 0 and idx % progress_interval == 0:
+            pct = idx * 100 // total
+            log(f"  Processing: {idx}/{total} ({pct}%)", "PROGRESS")
         first60 = full_seq[:60]
 
         if first60 in predictions:
@@ -435,8 +534,14 @@ Output files:
                         help='Path to existing predictions CSV (with --skip-prediction)')
     parser.add_argument('--verbose', '-v', action='store_true',
                         help='Verbose output')
+    parser.add_argument('--threads', '-t', type=int, default=None,
+                        help='Number of CPU threads (default: all available)')
+    parser.add_argument('--batch-size', type=int, default=None,
+                        help='Process sequences in batches of this size (for large files)')
     parser.add_argument('--check', action='store_true',
                         help='Check installation and exit')
+    parser.add_argument('--version', action='version',
+                        version=f'%(prog)s {__version__}')
 
     args = parser.parse_args()
 
@@ -452,6 +557,14 @@ Output files:
     if not os.path.exists(args.input):
         log(f"Input file not found: {args.input}", "ERROR")
         sys.exit(1)
+
+    # Validate FASTA file
+    log(f"Validating input file: {args.input}")
+    is_valid, message, stats = validate_fasta(args.input)
+    if not is_valid:
+        log(f"Invalid FASTA file: {message}", "ERROR")
+        sys.exit(1)
+    log(f"Valid FASTA: {stats['sequences']} sequences, lengths {stats['min_length']}-{stats['max_length']} aa")
 
     # Create output directory
     output_dir = Path(args.output_dir)
@@ -473,14 +586,57 @@ Output files:
     if args.skip_prediction and args.predictions:
         log(f"Using existing predictions: {args.predictions}")
         predictions_csv = Path(args.predictions)
+        log("Parsing predictions...")
+        predictions = parse_predictions(predictions_csv)
     else:
         if not check_installation():
             sys.exit(1)
-        run_tsignal(args.input, str(predictions_csv), verbose=args.verbose)
 
-    # Step 3: Parse predictions
-    log("Parsing predictions...")
-    predictions = parse_predictions(predictions_csv)
+        # Handle batch processing for large files
+        if args.batch_size and len(sequences) > args.batch_size:
+            log(f"Processing in batches of {args.batch_size} sequences...")
+            all_predictions = {}
+            batch_num = 0
+            seq_items = list(sequences.items())
+
+            for i in range(0, len(seq_items), args.batch_size):
+                batch_num += 1
+                batch_seqs = dict(seq_items[i:i + args.batch_size])
+                batch_fasta = output_dir / f"_batch_{batch_num}.fasta"
+                batch_csv = output_dir / f"_batch_{batch_num}.csv"
+
+                # Progress indicator
+                progress = min(i + args.batch_size, len(sequences))
+                log(f"Batch {batch_num}: sequences {i+1}-{progress} of {len(sequences)} ({progress*100//len(sequences)}%)")
+
+                # Write batch fasta
+                write_fasta(batch_seqs, batch_fasta)
+
+                # Run TSignal on batch
+                run_tsignal(str(batch_fasta), str(batch_csv),
+                           verbose=args.verbose, threads=args.threads)
+
+                # Parse and accumulate predictions
+                batch_preds = parse_predictions(batch_csv)
+                all_predictions.update(batch_preds)
+
+                # Cleanup batch files
+                batch_fasta.unlink()
+                batch_csv.unlink()
+
+            predictions = all_predictions
+            log(f"Batch processing complete: {len(predictions)} predictions")
+
+            # Write combined predictions
+            # (predictions are already parsed, skip CSV writing for now)
+        else:
+            run_tsignal(args.input, str(predictions_csv),
+                       verbose=args.verbose, threads=args.threads)
+
+            # Step 3: Parse predictions
+            log("Parsing predictions...")
+            predictions = parse_predictions(predictions_csv)
+
     log(f"Loaded {len(predictions)} unique predictions")
 
     # Step 4: Process sequences

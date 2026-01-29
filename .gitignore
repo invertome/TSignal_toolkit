@@ -19,12 +19,16 @@ __pycache__/
 # Output files
 output/*
 !output/.gitkeep
+test_output/
 
 # Temporary files
 *.tmp
 *.temp
 *.log
-*.bin
+
+# Binary files except essential TSignal data files
+source/sp_data/*.bin
+!source/sp_data/sp6_partitioned_data_*.bin
 
 # OS files
 .DS_Store

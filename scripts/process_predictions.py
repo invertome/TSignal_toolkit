@@ -10,7 +10,11 @@ Usage:
     ./process_predictions.py --predictions predictions.csv --fasta sequences.fasta --output-dir output/
 
 Author: Jorge L. Perez-Moreno, Ph.D. (jperezmoreno@umass.edu)
+Based on TSignal by Dumitrescu et al. (2022)
+https://github.com/Dumitrescu-Alexandru/TSignal
 """
+
+__version__ = "1.0.0"
 
 import argparse
 import csv

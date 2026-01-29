@@ -205,8 +205,11 @@ ls results/
 | `-i, --input` | Input FASTA file (required) | - |
 | `-o, --output-dir` | Output directory | `output/` |
 | `--threshold` | Probability threshold for SP removal | `0.9` |
+| `-t, --threads` | Number of CPU threads | all available |
+| `--batch-size` | Process in batches (for large files) | disabled |
 | `-v, --verbose` | Show detailed progress | off |
 | `--check` | Verify installation | - |
+| `--version` | Show version number | - |
 
 ### Examples
 
@@ -219,6 +222,12 @@ ls results/
 
 # Higher threshold (more conservative, only very confident predictions)
 ./scripts/tsignal_batch.py -i proteins.fasta -o results/ --threshold 0.95
+
+# Limit to 4 CPU threads
+./scripts/tsignal_batch.py -i proteins.fasta -o results/ --threads 4
+
+# Process large file in batches of 5000 sequences
+./scripts/tsignal_batch.py -i large_dataset.fasta -o results/ --batch-size 5000
 
 # Verbose mode
 ./scripts/tsignal_batch.py -i proteins.fasta -o results/ --verbose
