@@ -62,6 +62,49 @@ def log(msg, level="INFO"):
     print(f"[{timestamp}] {level}: {msg}", file=sys.stderr)
 
 
+def check_singularity():
+    """
+    Check if Singularity or Apptainer is installed.
+    Returns the runtime command if found, otherwise prints helpful error and exits.
+    """
+    for cmd in ["apptainer", "singularity"]:
+        try:
+            result = subprocess.run([cmd, "--version"], capture_output=True, text=True)
+            if result.returncode == 0:
+                return cmd
+        except FileNotFoundError:
+            continue
+
+    # Not found - print helpful error message
+    print("""
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                     SINGULARITY/APPTAINER NOT FOUND                          ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                              ║
+║  This toolkit requires Singularity or Apptainer to run the TSignal          ║
+║  container. Please install one of them first.                               ║
+║                                                                              ║
+║  INSTALLATION:                                                               ║
+║                                                                              ║
+║    Ubuntu/Debian:                                                            ║
+║      sudo apt update && sudo apt install -y apptainer                        ║
+║                                                                              ║
+║    CentOS/RHEL/Fedora:                                                       ║
+║      sudo dnf install -y apptainer                                           ║
+║                                                                              ║
+║    HPC Clusters (usually pre-installed):                                     ║
+║      module load singularity                                                 ║
+║      # or                                                                    ║
+║      module load apptainer                                                   ║
+║                                                                              ║
+║  For more information:                                                       ║
+║    https://apptainer.org/docs/admin/main/installation.html                   ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+""", file=sys.stderr)
+    sys.exit(1)
+
+
 def check_installation():
     """Verify all required files are present."""
     errors = []
@@ -69,14 +112,14 @@ def check_installation():
     # Check container
     if not CONTAINER_PATH.exists():
         errors.append(f"Container not found: {CONTAINER_PATH}")
-        errors.append("  -> Copy from: ../TSignal/tsignal.sif")
+        errors.append("  -> Run: ./scripts/download_models.sh")
     else:
         log(f"Container found: {CONTAINER_PATH} ({CONTAINER_PATH.stat().st_size / 1e6:.1f} MB)")
 
     # Check model
     if not MODEL_PATH.exists():
         errors.append(f"Model not found: {MODEL_PATH}")
-        errors.append("  -> Copy from: ../TSignal/sp_data/" + MODEL_NAME)
+        errors.append("  -> Run: ./scripts/download_models.sh")
     else:
         log(f"Model found: {MODEL_PATH} ({MODEL_PATH.stat().st_size / 1e9:.2f} GB)")
 
@@ -90,17 +133,10 @@ def check_installation():
     if not errors:
         log("All required files present!")
 
-        # Check singularity/apptainer
-        for cmd in ["apptainer", "singularity"]:
-            try:
-                result = subprocess.run([cmd, "--version"], capture_output=True, text=True)
-                if result.returncode == 0:
-                    log(f"Container runtime: {cmd} {result.stdout.strip()}")
-                    break
-            except FileNotFoundError:
-                continue
-        else:
-            errors.append("Neither 'apptainer' nor 'singularity' found in PATH")
+        # Show container runtime version
+        runtime = check_singularity()
+        result = subprocess.run([runtime, "--version"], capture_output=True, text=True)
+        log(f"Container runtime: {runtime} {result.stdout.strip()}")
 
     if errors:
         log("Installation check FAILED", "ERROR")
@@ -547,8 +583,12 @@ Output files:
 
     # Check installation
     if args.check:
+        check_singularity()  # Will exit with helpful message if not found
         success = check_installation()
         sys.exit(0 if success else 1)
+
+    # Check for Singularity/Apptainer before doing anything else
+    check_singularity()
 
     # Validate arguments
     if not args.input:

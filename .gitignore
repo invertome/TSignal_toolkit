@@ -42,3 +42,4 @@ Thumbs.db
 
 # Singularity build artifacts
 *.simg
+*.tar.gz
