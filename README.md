@@ -107,14 +107,7 @@ This toolkit repackages TSignal with:
 
 ## Installation
 
-### Step 1: Clone the Repository
-
-```bash
-git clone https://github.com/YOUR_USERNAME/TSignal_toolkit.git
-cd TSignal_toolkit
-```
-
-### Step 2: Install Required Software
+### Step 1: Install Singularity/Apptainer
 
 **Singularity or Apptainer** (container runtime) is required.
 
@@ -135,30 +128,33 @@ If not installed:
 python3 --version
 ```
 
-### Step 3: Download Model Files
+### Step 2: Download the Toolkit
 
-The pre-trained model and container are too large for GitHub (~2.5 GB total). Download them with the provided script:
+**Option A: Download Release (Recommended)**
+
+Download the latest release which includes the Singularity container:
 
 ```bash
+# Download and extract the release (includes container)
+wget https://github.com/invertome/TSignal_toolkit/releases/download/v1.0.0/TSignal_toolkit-v1.0.0.tar.gz
+tar -xzf TSignal_toolkit-v1.0.0.tar.gz
+cd TSignal_toolkit-v1.0.0
+
+# Download only the pre-trained model (~1.9 GB)
 ./scripts/download_models.sh
 ```
 
-This downloads:
-- `container/tsignal.sif` - Singularity container (557 MB)
-- `model/deployment_sep_pe_swa_extra_inpemb_on_gen_best_eval_only_dec.pth` - Pre-trained model (1.9 GB)
-
-**Manual Download** (if the script doesn't work):
+**Option B: Clone from Git**
 
 ```bash
-# Download the model from Dropbox
-wget -O model/deployment_sep_pe_swa_extra_inpemb_on_gen_best_eval_only_dec.pth \
-    "https://www.dropbox.com/s/lfuleg9470s7nqx/deployment_sep_pe_swa_extra_inpemb_on_gen_best_eval_only_dec.pth?dl=1"
+git clone https://github.com/invertome/TSignal_toolkit.git
+cd TSignal_toolkit
 
-# Build the container (requires sudo or Sylabs account)
-sudo singularity build container/tsignal.sif container/tsignal.def
+# Download container and model (~2.5 GB total)
+./scripts/download_models.sh
 ```
 
-### Step 4: Verify Installation
+### Step 3: Verify Installation
 
 ```bash
 ./scripts/tsignal_batch.py --check

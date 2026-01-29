@@ -44,8 +44,8 @@ echo ""
 MODEL_URL="https://www.dropbox.com/s/lfuleg9470s7nqx/deployment_sep_pe_swa_extra_inpemb_on_gen_best_eval_only_dec.pth?dl=1"
 
 # Singularity container (~557 MB)
-# TODO: Update this URL after uploading to Zenodo
-CONTAINER_URL="PLACEHOLDER_URL"
+# Hosted on GitHub Releases
+CONTAINER_URL="https://github.com/invertome/TSignal_toolkit/releases/download/v1.0.0/tsignal.sif"
 
 #################################################
 # Download Pre-trained Model
@@ -95,18 +95,6 @@ mkdir -p "$CONTAINER_DIR"
 if [[ -f "$CONTAINER_PATH" ]]; then
     echo "Container already exists: $CONTAINER_PATH"
     echo "  Size: $(du -h "$CONTAINER_PATH" | cut -f1)"
-elif [[ "$CONTAINER_URL" == "PLACEHOLDER_URL" ]]; then
-    echo "==========================================="
-    echo "Container download URL not yet configured"
-    echo "==========================================="
-    echo ""
-    echo "The container file needs to be downloaded manually."
-    echo ""
-    echo "Please contact the repository maintainer or check"
-    echo "the GitHub releases page for the container file."
-    echo ""
-    echo "Once downloaded, place it at: $CONTAINER_PATH"
-    echo ""
 else
     echo "Downloading Singularity container (~557 MB)..."
     echo "  This may take a few minutes..."
