@@ -1,0 +1,117 @@
+Bootstrap: docker
+From: python:3.8-slim-bullseye
+
+%labels
+    Author Jorge L. Perez-Moreno, Ph.D.
+    Maintainer Claude
+    Description TSignal signal peptide predictor container (ARM64 compatible)
+
+%post
+    # Install system dependencies
+    apt-get update && apt-get install -y --no-install-recommends \
+        git \
+        wget \
+        build-essential \
+        && rm -rf /var/lib/apt/lists/*
+
+    # Upgrade pip
+    pip install --upgrade pip setuptools wheel
+
+    # Install PyTorch - 1.9.0 for ARM64 compatibility
+    pip install torch==1.9.0
+
+    # Install tokenizers with ARM64 wheel and compatible transformers
+    pip install tokenizers==0.13.3
+    pip install transformers==4.26.0
+
+    # Install other dependencies
+    pip install \
+        biopython \
+        "numpy>=1.19,<1.24" \
+        pytorch_lightning==0.9.0 \
+        pytorch-nlp==0.5.0 \
+        pandas \
+        matplotlib \
+        test-tube==0.7.5 \
+        scikit-learn \
+        tensorboard==2.2.0 \
+        "protobuf>=3.19,<4.0"
+
+    # Create compatibility shims for old transformers module paths
+    python -c "
+import transformers
+import os
+
+# Get transformers package directory
+pkg_dir = os.path.dirname(transformers.__file__)
+
+# Create shim files for all needed old module paths
+shims = {
+    'modeling_bert.py': 'from transformers.models.bert.modeling_bert import *',
+    'configuration_bert.py': 'from transformers.models.bert.configuration_bert import *',
+    'tokenization_bert.py': 'from transformers.models.bert.tokenization_bert import *',
+    'modeling_utils.py': 'from transformers.modeling_utils import *',
+    'configuration_utils.py': 'from transformers.configuration_utils import *',
+    'file_utils.py': 'from transformers.utils import *',
+}
+
+for filename, content in shims.items():
+    path = os.path.join(pkg_dir, filename)
+    if not os.path.exists(path):
+        with open(path, 'w') as f:
+            f.write(content)
+        print(f'Created compatibility shim: {filename}')
+"
+
+    # Patch PyTorch linear module to add _LinearWithBias
+    python -c "
+import torch
+import os
+
+# Get path to linear.py
+linear_path = os.path.join(os.path.dirname(torch.__file__), 'nn', 'modules', 'linear.py')
+
+# Read current content
+with open(linear_path, 'r') as f:
+    content = f.read()
+
+# Add _LinearWithBias class definition if not present
+if '_LinearWithBias' not in content:
+    # Add the class at the end of the file
+    patch = '''
+
+# Compatibility shim for older model checkpoints
+class _LinearWithBias(Linear):
+    \"\"\"Linear layer with bias=True (compatibility alias for older PyTorch models).\"\"\"
+    def __init__(self, in_features, out_features):
+        super().__init__(in_features, out_features, bias=True)
+'''
+    with open(linear_path, 'a') as f:
+        f.write(patch)
+    print(f'Patched {linear_path} with _LinearWithBias')
+else:
+    print('_LinearWithBias already present')
+"
+
+    # Create app directory
+    mkdir -p /app/TSignal
+
+%environment
+    export LC_ALL=C
+    export PYTHONPATH=/app/TSignal:$PYTHONPATH
+    export CUDA_VISIBLE_DEVICES=""
+
+%runscript
+    cd /app/TSignal
+    exec python main.py "$@"
+
+%help
+    TSignal - Signal peptide prediction using transformers
+    Author: Jorge L. Perez-Moreno, Ph.D.
+
+    Usage:
+        apptainer run --bind /path/to/TSignal:/app/TSignal tsignal.sif \
+            --test_seqs test_seqs.fasta \
+            --test_mdl deployment_sep_pe_swa_extra_inpemb_on_gen_best_eval_only_dec.pth \
+            --tune_bert --train_only_decoder --verbouse \
+            --output_file output.csv

@@ -1,0 +1,40 @@
+# Large binary files (must be downloaded separately)
+# These are too large for GitHub and should be downloaded from the links in README
+container/tsignal.sif
+model/*.pth
+
+# Keep the directories but ignore contents
+!container/.gitkeep
+!model/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+
+# Output files
+output/*
+!output/.gitkeep
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.bin
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Singularity build artifacts
+*.simg
